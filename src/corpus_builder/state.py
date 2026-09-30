@@ -5,8 +5,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .errors import ConfigurationError
+from .identity import QueryContext
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def now() -> str:
@@ -20,7 +21,7 @@ def atomic_json(path: Path, obj) -> None:
 
 
 class State:
-    def __init__(self, directory: Path, query: str, config):
+    def __init__(self, directory: Path, query: str, config, context=None):
         self.directory = directory
         self.db = sqlite3.connect(directory / "state.sqlite3")
         self.db.execute("PRAGMA journal_mode=WAL")
@@ -33,25 +34,56 @@ class State:
                 seq INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL);
         """)
         previous = self.get("run")
-        identity = {"query": query, "formats": sorted(config.formats), "oa_only": True}
+        identity = {
+            "query": query,
+            "formats": sorted(config.formats),
+            "oa_only": True,
+            "sources": ["pmc"]
+            + (["europe_pmc"] if config.europe_pmc else [])
+            + (["unpaywall"] if config.unpaywall else []),
+        }
         if previous:
             if not config.resume:
                 self.db.close()
                 raise ConfigurationError(
                     "Run exists; enable resume or choose a new output directory"
                 )
-            if previous["schema_version"] != SCHEMA_VERSION or previous["identity"] != identity:
+            if (
+                previous["schema_version"] not in (1, SCHEMA_VERSION)
+                or {**previous["identity"], "sources": previous["identity"].get("sources", ["pmc"])}
+                != identity
+            ):
                 self.db.close()
-                raise ConfigurationError("Existing run is incompatible with this query or formats")
-            self.run = previous
+                raise ConfigurationError(
+                    "Existing run is incompatible with this query, formats or sources"
+                )
+            resolved_context = (
+                context.resolve(query)
+                if context is not None
+                else previous.get("context", QueryContext().resolve(query))
+            )
+            if previous.get("context") and previous["context"] != resolved_context:
+                self.db.close()
+                raise ConfigurationError("Existing run has different query context")
+            if previous["schema_version"] == 1:
+                backup = sqlite3.connect(directory / "state.v1.backup.sqlite3")
+                try:
+                    self.db.backup(backup)
+                finally:
+                    backup.close()
+            self.run = {**previous, "schema_version": SCHEMA_VERSION, "context": resolved_context}
         else:
             self.run = {
                 "run_id": str(uuid.uuid4()),
                 "schema_version": SCHEMA_VERSION,
-                "package_version": "0.1.0",
+                "package_version": "0.2.0",
+                "context": (context or QueryContext()).resolve(query),
                 "identity": identity,
                 "created_at": now(),
             }
+        self.run.setdefault("created_with_package_version", self.run["package_version"])
+        self.run["package_version"] = "0.2.0"
+        self.run["identity"] = identity
         self.run["config"] = config.public_dict()
         self.run["updated_at"] = now()
         self.set("run", self.run)

@@ -1,6 +1,7 @@
 import csv
 import json
 from collections import Counter
+from pathlib import Path
 
 from .models import BuildResult
 from .state import atomic_json, now
@@ -22,7 +23,24 @@ def write_reports(state, status, errors) -> BuildResult:
     seen_versions = set()
     manifest_tmp = directory / "manifest.jsonl.tmp"
     csv_tmp = directory / "manifest.csv.tmp"
-    fields = ["pmid", "title", "doi", "pmcids", "status", "file_count", "errors"]
+    fields = [
+        "pmid",
+        "title",
+        "authors",
+        "year",
+        "journal",
+        "doi",
+        "pmcids",
+        "abstract",
+        "keywords",
+        "mesh_terms",
+        "publication_types",
+        "access_status",
+        "retrieval_status",
+        "status",
+        "file_count",
+        "errors",
+    ]
     with (
         manifest_tmp.open("w", encoding="utf-8") as jsonl,
         csv_tmp.open("w", encoding="utf-8-sig", newline="") as tabular,
@@ -54,6 +72,22 @@ def write_reports(state, status, errors) -> BuildResult:
             counts["articles_with_files"] += int(file_count > 0)
             metadata = record.get("metadata") or {}
             row = {
+                **{
+                    k: json.dumps(metadata.get(k), ensure_ascii=False)
+                    if isinstance(metadata.get(k), (list, dict))
+                    else metadata.get(k)
+                    for k in (
+                        "authors",
+                        "year",
+                        "journal",
+                        "abstract",
+                        "keywords",
+                        "mesh_terms",
+                        "publication_types",
+                    )
+                },
+                "access_status": record.get("access_status", "unknown"),
+                "retrieval_status": record.get("retrieval_status", "pending"),
                 "pmid": record["pmid"],
                 "title": metadata.get("title", ""),
                 "doi": metadata.get("doi") or "",
@@ -91,13 +125,20 @@ def write_reports(state, status, errors) -> BuildResult:
         directory / "report.json",
         directory / "manifest.jsonl",
         tuple(errors),
+        Path(state.run["catalog_dir"]) if state.run.get("catalog_dir") else None,
     )
     report = {
         **result.to_dict(),
         "generated_at": now(),
         "query": state.run["identity"]["query"],
         "search": search,
-        "scope": "PubMed query; PMC Open Access Subset; requested formats when available",
+        "scope": "PubMed discovery; configured OA sources; requested formats when available",
+        "context": state.run.get("context"),
+        "sources_enabled": {
+            "pmc": True,
+            "europe_pmc": state.run["config"].get("europe_pmc", False),
+            "unpaywall": state.run["config"].get("unpaywall", False),
+        },
         "source": "NIH NLM NCBI PubMed Central Article Datasets",
         "source_url": "https://pmc.ncbi.nlm.nih.gov/tools/pmcaws/",
     }

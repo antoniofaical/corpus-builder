@@ -6,13 +6,16 @@ from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import ParseError
 from filelock import FileLock, Timeout
 
+from .catalog import Catalog
 from .config import BuildConfig
 from .errors import ConfigurationError, CorpusBuilderError, RemoteError, RetryableError
+from .identity import QueryContext
 from .models import BuildResult
 from .pmc import PMC, file_source
 from .pubmed import PubMed, batches
 from .reporting import write_reports
-from .state import State, now
+from .resolvers import classify, collect_additional
+from .state import State, atomic_json, now
 from .transport import Transport, file_hash, validate_file
 
 logger = logging.getLogger(__name__)
@@ -20,9 +23,13 @@ logger = logging.getLogger(__name__)
 
 def _enrich(pubmed, state, emit):
     for batch in batches(
-        r for r in state.records() if r["metadata"] is None or r["pmcids"] is None
+        r
+        for r in state.records()
+        if (r["metadata"] or {}).get("metadata_schema_version") != 2 or r["pmcids"] is None
     ):
-        need_metadata = [r["pmid"] for r in batch if r["metadata"] is None]
+        need_metadata = [
+            r["pmid"] for r in batch if (r["metadata"] or {}).get("metadata_schema_version") != 2
+        ]
         need_links = [r["pmid"] for r in batch if r["pmcids"] is None]
         for key, ids, fetch in (
             ("metadata", need_metadata, pubmed.metadata),
@@ -50,10 +57,18 @@ def _enrich(pubmed, state, emit):
         emit("metadata_batch_completed", records=len(batch))
 
 
-def _get_file(version, fmt, old, directory, transport):
+def _get_file(version, fmt, old, directory, transport, catalog=None):
     pmcid, number = version["pmcid"], version["version"]
     identifier = f"{pmcid}.{number}.{fmt}"
-    file = {"id": identifier, "pmcid": pmcid, "version": number, "format": fmt}
+    file = {
+        "id": identifier,
+        "pmcid": pmcid,
+        "version": number,
+        "format": fmt,
+        "source": "pmc",
+        "license": version.get("license_code"),
+        "metadata_url": version.get("metadata_url"),
+    }
     source = version.get(fmt + "_url")
     if not source:
         return {**file, "status": "unavailable"}
@@ -78,9 +93,14 @@ def _get_file(version, fmt, old, directory, transport):
                     "md5": file_hash(path, "md5"),
                     "bytes": path.stat().st_size,
                     "verified_at": now(),
+                    "downloaded_at": old.get("downloaded_at"),
                 }
         except (RetryableError, ParseError, DefusedXmlException):
             pass
+    if catalog:
+        cached = catalog.restore(url, path, fmt, md5)
+        if cached:
+            return {**file, **cached, "status": "reused", "verified_at": now()}
     try:
         info = transport.download(url, path, fmt, md5)
     except RemoteError as exc:
@@ -88,7 +108,7 @@ def _get_file(version, fmt, old, directory, transport):
     return {**file, **info, "status": "downloaded", "verified_at": now()}
 
 
-def _collect(pmc, transport, config, state, emit):
+def _collect(pmc, transport, config, state, emit, catalog=None):
     for record in state.records():
         if record["pmcids"] is None:
             record["status"] = "error"
@@ -118,7 +138,7 @@ def _collect(pmc, transport, config, state, emit):
                 identifier = f"{version['pmcid']}.{version['version']}.{fmt}"
                 old = next((f for f in record["files"] if f["id"] == identifier), {})
                 try:
-                    file = _get_file(version, fmt, old, state.directory, transport)
+                    file = _get_file(version, fmt, old, state.directory, transport, catalog)
                 except RemoteError as exc:
                     file = {
                         "id": identifier,
@@ -129,6 +149,8 @@ def _collect(pmc, transport, config, state, emit):
                         "error": str(exc),
                     }
                 record["files"] = [f for f in record["files"] if f["id"] != identifier] + [file]
+                if catalog:
+                    catalog.store_file(file, state.directory)
                 if file["status"] == "error":
                     record["errors"].append(
                         {"stage": "download", "file": identifier, "message": file["error"]}
@@ -167,8 +189,10 @@ def build_corpus(
     config: BuildConfig | None = None,
     *,
     on_event: Callable[[dict], None] | None = None,
+    context: QueryContext | None = None,
+    corpus_dir: str | Path | None = None,
 ) -> BuildResult:
-    """Discover one PubMed query and retrieve its available PMC OA PDF/XML files.
+    """Discover one PubMed query and retrieve texts from configured OA sources.
 
     A supplied callback receives committed events; callback exceptions do not fail a run.
     Configuration errors raise ConfigurationError. Operational failures return a result
@@ -176,6 +200,10 @@ def build_corpus(
     """
     if not isinstance(query, str) or not query.strip():
         raise ConfigurationError("query must be a nonempty PubMed search string")
+    if context is not None and not isinstance(context, QueryContext):
+        raise ConfigurationError("context must be a QueryContext")
+    if context:
+        context.resolve(query)
     config = config or BuildConfig()
     key = config.resolve_key()
     directory = Path(output_dir).resolve()
@@ -185,7 +213,7 @@ def build_corpus(
         lock.acquire()
     except Timeout:
         raise ConfigurationError("Another process is using this output directory") from None
-    state = transport = None
+    state = transport = catalog = None
     try:
         if not (directory / "state.sqlite3").exists() and any(
             p.name != ".run.lock" for p in directory.iterdir()
@@ -193,7 +221,17 @@ def build_corpus(
             raise ConfigurationError(
                 "Output directory contains unrelated files; choose an empty one"
             )
-        state = State(directory, query, config)
+        state = State(directory, query, config, context)
+        catalog_path = Path(
+            corpus_dir or state.run.get("catalog_dir") or directory / "catalog"
+        ).resolve()
+        if catalog_path == directory:
+            raise ConfigurationError("corpus_dir must differ from output_dir")
+        catalog = Catalog(catalog_path)
+        catalog.register(state.run, state.run["context"])
+        state.run["catalog_dir"] = str(catalog_path)
+        state.set("run", state.run)
+        atomic_json(directory / "run.json", state.run)
 
         def emit(stage, **details):
             event = state.event(stage, **details)
@@ -219,8 +257,10 @@ def build_corpus(
                 record["status"] = "pending"
                 state.save(record)
             _enrich(pubmed, state, emit)
+            catalog.ingest(state)
             emit("downloads_started")
-            _collect(PMC(transport), transport, config, state, emit)
+            _collect(PMC(transport), transport, config, state, emit, catalog)
+            collect_additional(transport, config, state, emit, catalog)
             failed = sum(r["status"] == "error" for r in state.records())
             status = "partial" if failed else "completed"
             if failed:
@@ -242,6 +282,11 @@ def build_corpus(
             raise
         finally:
             emit("run_finished", status=status, errors=errors)
+            for record in state.records():
+                classify(record)
+                state.save(record)
+            catalog.ingest(state, status)
+            catalog.export()
             result = write_reports(state, status, errors)
         if interrupted:
             raise KeyboardInterrupt
@@ -251,4 +296,6 @@ def build_corpus(
             transport.close()
         if state:
             state.close()
+        if catalog:
+            catalog.close()
         lock.release()

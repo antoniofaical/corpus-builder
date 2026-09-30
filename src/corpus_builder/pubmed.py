@@ -2,6 +2,7 @@ import re
 from itertools import islice
 
 from .errors import DiscoveryError, RemoteError
+from .identity import normalize_doi, publication_year
 from .state import now
 
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
@@ -33,6 +34,14 @@ class PubMed:
         ]
         if webenv:
             data.append(("WebEnv", webenv))
+        if hasattr(self.http, "emit"):
+            self.http.emit(
+                "search_request",
+                database="pubmed",
+                expression=query,
+                history_reference=bool(webenv),
+                retmax=limit,
+            )
         obj = self.http.json(EUTILS + "esearch.fcgi", data=data, ncbi=True)
         result = obj.get("esearchresult")
         if not isinstance(result, dict) or "count" not in result or result.get("ERROR"):
@@ -158,8 +167,21 @@ class PubMed:
                 article = citation
             identifiers = {i.get("IdType"): text(i) for i in entry.findall(".//ArticleId")}
             authors = []
+            authors_structured = []
             for author in article.findall("AuthorList/Author"):
                 collective = text(author.find("CollectiveName"))
+                authors_structured.append(
+                    {
+                        "given": text(author.find("ForeName")),
+                        "family": text(author.find("LastName")),
+                        "initials": text(author.find("Initials")),
+                        "collective": collective,
+                        "identifiers": [
+                            {"source": i.get("Source"), "value": text(i)}
+                            for i in author.findall("Identifier")
+                        ],
+                    }
+                )
                 authors.append(
                     collective
                     or " ".join(
@@ -175,8 +197,28 @@ class PubMed:
                 date = article.find("Book/PubDate")
             date_parts = {part.tag: text(part) for part in date} if date is not None else {}
             records[pmid] = {
+                "metadata_schema_version": 2,
                 "title": text(article.find("ArticleTitle")),
                 "authors": authors,
+                "authors_structured": authors_structured,
+                "year": publication_year(date_parts),
+                "year_source": "JournalIssue/PubDate or Book/PubDate",
+                "keywords": [text(k) for k in citation.findall("KeywordList/Keyword")],
+                "mesh_terms": [
+                    {
+                        "descriptor": text(h.find("DescriptorName")),
+                        "ui": h.find("DescriptorName").get("UI"),
+                        "qualifiers": [text(q) for q in h.findall("QualifierName")],
+                    }
+                    for h in citation.findall("MeshHeadingList/MeshHeading")
+                    if h.find("DescriptorName") is not None
+                ],
+                "doi_normalized": normalize_doi(identifiers.get("doi")),
+                "metadata_source": "pubmed",
+                "related_articles": [
+                    dict(c.attrib, id=text(c.find("PMID")))
+                    for c in citation.findall("CommentsCorrectionsList/*")
+                ],
                 "journal": text(article.find("Journal/Title")),
                 "publication_date": date_parts,
                 "doi": identifiers.get("doi"),
@@ -184,6 +226,28 @@ class PubMed:
                 "publication_types": [text(p) for p in article.findall("PublicationTypeList/*")],
                 "source_url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
                 "retrieved_at": now(),
+            }
+        for record in records.values():
+            record["field_provenance"] = {
+                key: {
+                    "source": "pubmed",
+                    "source_url": record["source_url"],
+                    "retrieved_at": record["retrieved_at"],
+                }
+                for key in (
+                    "title",
+                    "authors",
+                    "authors_structured",
+                    "year",
+                    "journal",
+                    "doi",
+                    "doi_normalized",
+                    "abstract",
+                    "keywords",
+                    "mesh_terms",
+                    "publication_types",
+                )
+                if record.get(key)
             }
         return records
 
