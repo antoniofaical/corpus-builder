@@ -2,3 +2,5 @@ include configs.toml
 include tests/conftest.py
 recursive-include docs *.md
 recursive-include examples *.py
+include orchestrator.py
+recursive-include examples *.json

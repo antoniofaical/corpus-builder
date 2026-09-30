@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "corpus-builder"
-version = "0.2.0"
+version = "0.3.0"
 description = "PubMed discovery, query provenance and verified open-access corpus downloads"
 requires-python = ">=3.11"
 dependencies = ["httpx[socks]==0.28.1", "defusedxml==0.7.1", "filelock>=3.16,<5"]
@@ -14,6 +14,7 @@ dev = ["pytest==9.1.1", "ruff==0.16.9", "build>=1.2,<2"]
 
 [project.scripts]
 corpus-builder = "corpus_builder.cli:main"
+corpus-builder-batch = "corpus_builder.orchestrator:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

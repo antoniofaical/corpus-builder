@@ -1,3 +1,35 @@
+# Validação 0.3.0 — orchestrator
+
+Em 30/09/2026: **115 testes aprovados** localmente (Linux/Python 3.12.14), lint e
+formatação aprovados, wheel/sdist gerados. A suíte inclui os 85 testes anteriores
+mais 30 casos de orquestração/input.
+
+Verificações novas:
+
+- N entradas geram N chamadas ordenadas ao core, incluindo entradas repetidas.
+- JSON simples/contextual, preservação literal da expressão e validação completa antes da execução.
+- Conflitos de ID/versão e alterações de lista/ordem/configuração não sobrescrevem o lote.
+- Falhas de query não impedem entradas seguintes; autenticação rejeitada interrompe o lote.
+- Retomada tenta apenas entradas incompletas; rechecagem opcional chama também as concluídas.
+- Ctrl+C, marcadores deixados por encerramento forçado e falhas de callback preservam o estado.
+- Exceções inesperadas são registradas sem dados sensíveis e propagadas.
+- Bloqueio de dois escritores, rejeição de checkpoints com caminhos alterados e diretórios alheios.
+- Intervalo entre queries respeita os limites ao recriar os clientes HTTP do core.
+- Execução da CLI e do core real com serviços simulados, incluindo reuso e proveniência.
+
+Integração remota pequena, sem a chave do usuário e com NCBI limitado a 3 requests/s:
+input JSON com `35275515[uid]` e `35275515[PMID]`, IDs de query distintos,
+formato XML e fonte PMC. O lote concluiu as **2 chamadas**; a primeira baixou um XML,
+a segunda reutilizou o arquivo pelo catálogo compartilhado. Repetir o lote produziu
+**0 chamadas ao core e 2 entradas puladas**, mantendo os estados concluídos.
+
+Os entrypoints `orchestrator.py`, `python -m corpus_builder.orchestrator` e o script
+instalável `corpus-builder-batch` compartilham a mesma implementação. A configuração
+Unpaywall e suas limitações de validação continuam como documentadas na versão 0.2.0.
+Deduplicação bibliográfica permanece fora do escopo.
+
+---
+
 # Validação 0.2.0 — proveniência e fontes abertas
 
 Verificações em 30/09/2026, Linux/Python 3.12.14. Deduplicação bibliográfica foi
