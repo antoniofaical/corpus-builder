@@ -1,0 +1,19 @@
+[ncbi]
+# NAME of your existing environment variable, never the secret itself.
+api_key_env = "NCBI_API_KEY"
+require_api_key = true
+requests_per_second = 10
+email = ""
+tool = "corpus-builder"
+
+[download]
+formats = ["pdf", "xml"]
+requests_per_second = 3
+
+[http]
+timeout_seconds = 60
+max_attempts = 5
+backoff_seconds = 1
+
+[run]
+resume = true

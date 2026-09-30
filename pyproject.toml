@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "corpus-builder"
+version = "0.1.0"
+description = "Resumable PubMed discovery and verified PMC Open Access corpus downloads"
+requires-python = ">=3.11"
+dependencies = ["httpx[socks]==0.28.1", "defusedxml==0.7.1", "filelock>=3.16,<5"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "ruff==0.16.9", "build>=1.2,<2"]
+
+[project.scripts]
+corpus-builder = "corpus_builder.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
