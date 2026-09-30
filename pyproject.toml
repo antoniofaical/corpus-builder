@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "corpus-builder"
-version = "0.1.0"
-description = "Resumable PubMed discovery and verified PMC Open Access corpus downloads"
+version = "0.2.0"
+description = "PubMed discovery, query provenance and verified open-access corpus downloads"
 requires-python = ">=3.11"
 dependencies = ["httpx[socks]==0.28.1", "defusedxml==0.7.1", "filelock>=3.16,<5"]
 

@@ -1,5 +1,6 @@
 import math
 import os
+import re
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -20,31 +21,41 @@ class BuildConfig:
     max_attempts: int = 5
     backoff_seconds: float = 1
     resume: bool = True
+    europe_pmc: bool = False
+    unpaywall: bool = False
+    unpaywall_email: str = ""
+    resolver_requests_per_second: float = 1
+    max_download_bytes: int = 268435456
 
     def validate(self) -> None:
-        for name in ("api_key_env", "email", "tool"):
+        for name in ("api_key_env", "email", "tool", "unpaywall_email"):
             if not isinstance(getattr(self, name), str):
                 raise ConfigurationError(f"{name} must be a string")
         if not self.api_key_env or not self.tool:
             raise ConfigurationError("api_key_env and tool must not be empty")
-        for name in ("require_api_key", "resume"):
+        for name in ("require_api_key", "resume", "europe_pmc", "unpaywall"):
             if type(getattr(self, name)) is not bool:
                 raise ConfigurationError(f"{name} must be boolean")
         if not isinstance(self.formats, (tuple, list)) or not self.formats:
-            raise ConfigurationError("formats must contain pdf and/or xml")
-        if any(x not in ("pdf", "xml") for x in self.formats):
-            raise ConfigurationError("Only pdf and xml formats are supported")
+            raise ConfigurationError("formats must contain pdf, xml and/or html")
+        if any(x not in ("pdf", "xml", "html") for x in self.formats):
+            raise ConfigurationError("Only pdf, xml and html formats are supported")
         if len(set(self.formats)) != len(self.formats):
             raise ConfigurationError("formats must not contain duplicates")
         for name in (
             "requests_per_second",
             "download_requests_per_second",
+            "resolver_requests_per_second",
             "timeout_seconds",
             "backoff_seconds",
         ):
             value = getattr(self, name)
             if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
                 raise ConfigurationError(f"{name} must be a finite positive number")
+        if self.unpaywall and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", self.unpaywall_email):
+            raise ConfigurationError("unpaywall requires unpaywall_email")
+        if type(self.max_download_bytes) is not int or self.max_download_bytes <= 0:
+            raise ConfigurationError("max_download_bytes must be a positive integer")
         if self.requests_per_second > 10:
             raise ConfigurationError("NCBI requests_per_second must be <= 10")
         if type(self.max_attempts) is not int or not 1 <= self.max_attempts <= 20:
@@ -79,9 +90,12 @@ class BuildConfig:
             "download": {
                 "formats": "formats",
                 "requests_per_second": "download_requests_per_second",
+                "max_bytes": "max_download_bytes",
             },
             "http": {k: k for k in ("timeout_seconds", "max_attempts", "backoff_seconds")},
             "run": {"resume": "resume"},
+            "sources": {k: k for k in ("europe_pmc", "unpaywall", "unpaywall_email")},
+            "resolvers": {"requests_per_second": "resolver_requests_per_second"},
         }
         values = {}
         for section, entries in raw.items():

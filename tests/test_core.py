@@ -95,15 +95,15 @@ def test_corrupted_download_is_rejected_and_retried(fake, config, tmp_path):
     assert resumed.status == "completed" and resumed.counts["files_reused"] == 1
 
 
-def test_tampered_file_is_downloaded_again(fake, config, tmp_path):
+def test_tampered_file_is_restored_from_verified_cache(fake, config, tmp_path):
     build_corpus("fixture", tmp_path, config)
     pdf = tmp_path / "articles/PMC123.1/PMC123.1.pdf"
     pdf.write_bytes(b"broken")
     fake.calls.clear()
     result = build_corpus("fixture", tmp_path, config)
-    assert result.counts["files_downloaded"] == 1
-    assert result.counts["files_reused"] == 1
-    assert len(fake.calls) == 1 and pdf.read_bytes() == PDF
+    assert result.counts["files_downloaded"] == 0
+    assert result.counts["files_reused"] == 2
+    assert not fake.calls and pdf.read_bytes() == PDF
 
 
 def test_interrupt_preserves_completed_files(fake, config, tmp_path):

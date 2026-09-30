@@ -1,3 +1,66 @@
+# Validação 0.2.0 — proveniência e fontes abertas
+
+Verificações em 30/09/2026, Linux/Python 3.12.14. Deduplicação bibliográfica foi
+explicitamente excluída do escopo: mesmos DOI/título em PMIDs distintos permanecem
+separados, e não há decisões de fusão automáticas ou manuais.
+
+## Testes determinísticos
+
+**85 testes aprovados**, com `ruff check`, `ruff format --check` e build de wheel/sdist.
+A suíte verifica os casos existentes, mais:
+
+- Duas queries/versionamentos/trilhas preservados no catálogo, com todos os vínculos.
+- Reaproveitamento de arquivos entre runs e recuperação de cópias locais corrompidas.
+- DOI igual em PMIDs distintos sem consolidação.
+- Conflito de ID/versão/contexto e configuração incompatível rejeitados antes da rede.
+- Importação v1 idempotente sem alteração do banco ou manifesto original.
+- Migração de retomada v1 com backup consistente, mantendo o run_id.
+- Metadados de artigos sem texto aberto, palavras-chave, MeSH e proveniência de campos.
+- Europe PMC e Unpaywall em fixtures; DOI incorreto não permite baixar o arquivo.
+- `open_access` com download falho; `closed` com evidência datada; 404 resulta em `unknown`.
+- HTML estruturado aceito; páginas de resumo/login rejeitadas; redirects privados rejeitados.
+- Limites de tamanho e limpeza de arquivos parciais.
+- Bloqueio de dois escritores do mesmo catálogo; configuração de email Unpaywall.
+
+Fixtures não representam artigos reais. CI executa lint, formatação, testes e build
+em Windows/Linux e Python 3.11/3.13; confira os logs associados ao commit.
+
+## Integração real 0.2.0
+
+Executada sem a chave do usuário, explicitamente com limite NCBI de 3 requests/s,
+Europe PMC habilitado e formato XML. Duas queries equivalentes, registradas como
+estratégias distintas: `35275515[uid]` e `35275515[PMID]`.
+
+| Execução | Resultado |
+|---|---|
+| `live-one`, versão `1`, trilha `T1` | 1 PMID; 2 XMLs baixados e verificados; completed. |
+| `live-two`, versão `1`, trilha `T2` | 1 PMID; 2 XMLs reutilizados do catálogo; completed. |
+| Retomada de `live-one` | Mesmo run_id; 2 arquivos reutilizados; nenhuma nova busca. |
+| Catálogo | 2 queries, 2 execuções, 2 vínculos e 1 identidade de origem (`pubmed:35275515`). |
+
+Os documentos têm conteúdos e hashes distintos e foram preservados separadamente:
+
+| Fonte | Bytes | SHA-256 |
+|---|---:|---|
+| PMC, `PMC10009402.1.xml` | 109974 | `75d9e0ab27e80e8660296e33bb1832dd8237080d5782b229bbd81fb4919c323a` |
+| Europe PMC, `PMC10009402/fullTextXML` | 105624 | `4813f68e740fcd463f8ec1b9f3435fc9a547be6b06078e4993d22bddbf753c3d` |
+
+Também foi importada uma execução real do core 0.1.0 (`runs/live-smoke`): dois
+registros, nenhum arquivo local indisponível, e hashes do banco, manifesto e relatório
+de origem idênticos antes/depois. O download Europe PMC foi repetido com a validação
+de URLs final, confirmando funcionamento com resolução remota via proxy.
+
+Não foi realizado teste remoto do Unpaywall, pois não foi fornecido email de contato
+para esse serviço. Sua integração foi verificada com respostas simuladas, incluindo
+sucesso, 404, falha HTTP, identidade incorreta, formatos e proveniência. HTML foi
+validado por fixtures, não por cobertura exaustiva de layouts de editoras.
+
+Não foi repetida aquisição em grande volume nesta versão. O teste de enumeração
+real de 14.303 PMIDs abaixo pertence ao core 0.1.0; a suíte de regressão continua
+cobrindo o particionamento. Arquivos reais e bancos dos testes não são versionados.
+
+---
+
 # Validação do core 0.1.0
 
 Verificações realizadas em 30/09/2026. Ambiente local: Linux, Python 3.12.14.

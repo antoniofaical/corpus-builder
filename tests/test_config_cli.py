@@ -33,7 +33,7 @@ requests_per_second = 2
         "[http]\nmax_attempts=0",
         "[download]\nformats=[]",
         "[run]\nresume='yes'",
-        "[download]\nformats=['html']",
+        "[download]\nformats=['docx']",
     ],
 )
 def test_invalid_config_is_rejected(tmp_path, body):

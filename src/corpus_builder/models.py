@@ -13,6 +13,7 @@ class BuildResult:
     report_path: Path
     manifest_path: Path
     errors: tuple[str, ...]
+    catalog_dir: Path | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -24,4 +25,5 @@ class BuildResult:
             "report_path": str(self.report_path),
             "manifest_path": str(self.manifest_path),
             "errors": list(self.errors),
+            "catalog_dir": str(self.catalog_dir) if self.catalog_dir else None,
         }

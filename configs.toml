@@ -7,7 +7,8 @@ email = ""
 tool = "corpus-builder"
 
 [download]
-formats = ["pdf", "xml"]
+formats = ["pdf", "xml"] # optionally add "html"
+max_bytes = 268435456
 requests_per_second = 3
 
 [http]
@@ -17,3 +18,13 @@ backoff_seconds = 1
 
 [run]
 resume = true
+
+[sources]
+# PubMed is still the only discovery database. These locate/enrich full text.
+europe_pmc = true
+# Enable only after setting your contact email; no paid subscription is used.
+unpaywall = false
+unpaywall_email = ""
+
+[resolvers]
+requests_per_second = 1
