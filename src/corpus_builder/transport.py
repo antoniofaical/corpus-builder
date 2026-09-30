@@ -45,7 +45,7 @@ class Transport:
         self.client = client or httpx.Client(
             timeout=config.timeout_seconds,
             follow_redirects=False,
-            headers={"User-Agent": "corpus-builder/0.2.0", "Accept-Encoding": "identity"},
+            headers={"User-Agent": "corpus-builder/0.3.0", "Accept-Encoding": "identity"},
         )
         self.ncbi_limiter = RateLimiter(config.requests_per_second)
         self.download_limiter = RateLimiter(config.download_requests_per_second)

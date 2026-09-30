@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "queries": [
+    {
+      "query_id": "Q01",
+      "query_version": "1",
+      "track": "T1",
+      "technical_stratum": "hardware",
+      "query": "(\"biosensors\"[MeSH Terms]) AND microneedle*"
+    },
+    {
+      "query_id": "Q02",
+      "query_version": "1",
+      "track": "T2",
+      "technical_stratum": "wearables",
+      "query": "(\"biosensors\"[MeSH Terms]) AND wearable*"
+    }
+  ]
+}

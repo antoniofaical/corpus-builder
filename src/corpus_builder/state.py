@@ -76,13 +76,13 @@ class State:
             self.run = {
                 "run_id": str(uuid.uuid4()),
                 "schema_version": SCHEMA_VERSION,
-                "package_version": "0.2.0",
+                "package_version": "0.3.0",
                 "context": (context or QueryContext()).resolve(query),
                 "identity": identity,
                 "created_at": now(),
             }
         self.run.setdefault("created_with_package_version", self.run["package_version"])
-        self.run["package_version"] = "0.2.0"
+        self.run["package_version"] = "0.3.0"
         self.run["identity"] = identity
         self.run["config"] = config.public_dict()
         self.run["updated_at"] = now()

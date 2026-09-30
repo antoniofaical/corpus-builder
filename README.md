@@ -121,7 +121,24 @@ configuração levantam `ConfigurationError`. Ctrl+C salva e propaga `KeyboardIn
 
 Callbacks recebem `event_id`, `run_id`, timestamp UTC e etapa, após persistência no
 SQLite. Exceções normais do callback não interrompem a coleta. Não há webhooks,
-notificações externas, orchestrator de listas, API HTTP ou integração n8n nesta versão.
+notificações externas, API HTTP ou integração n8n nesta versão.
+O orchestrator sequencial de listas está descrito abaixo.
+
+## Executar uma lista de queries
+
+O orchestrator recebe um JSON e chama o core uma vez por entrada, em ordem, com
+retomada e catálogo compartilhado. Input recomendado: objetos com `query`, `query_id`,
+`query_version` e contexto opcional. Também aceita strings simples no array.
+
+```powershell
+.\.venv\Scripts\python.exe .\orchestrator.py --queries .\queries.json --output-dir .\runs\lote-01 --corpus-dir .\corpus --config .\configs.toml
+```
+
+- Exemplo: [examples/queries.example.json](examples/queries.example.json).
+- Contrato, comportamento de falhas e API Python: [docs/ORCHESTRATOR.md](docs/ORCHESTRATOR.md).
+- API pública: `run_batch(queries, output_dir, config, corpus_dir=...)` e `load_queries(path)`.
+- Repetir o comando pula concluídas e retoma entradas pendentes/parciais/falhas.
+- `--recheck-completed` chama o core também para conferir novamente as concluídas.
 
 ## Pipeline e fontes
 
